@@ -87,7 +87,7 @@ abstract class CompassBaseTask extends Task {
         ),
         'force' => array(
             'type' => 'flag-normal',
-            'value' => NULL
+            'value' => NULL,
         ),
         'boring' => array(
             'type' => 'flag-normal',
@@ -100,6 +100,17 @@ abstract class CompassBaseTask extends Task {
      */
     public function setDir(PhingFile $value) {
         $this->dir = $value;
+    }
+
+    /**
+     * @return PhingFile
+     */
+    public function getDir() {
+        if ($this->dir) {
+          return $this->dir;
+        }
+
+        return new PhingFile('.');
     }
 
     /**
@@ -205,8 +216,42 @@ abstract class CompassBaseTask extends Task {
      * @return $this
      */
     public function executePrepare() {
-        $this->commandPattern = '%s';
-        $this->commandArgs = array(escapeshellcmd($this->executable));
+        $this->commandPattern = '';
+        $this->commandArgs = array();
+
+        $dir = $this->getDir();
+        if (file_exists("$dir/Gemfile")) {
+            chdir($dir);
+
+            $bundle_unsafe = $this->executableGet('bundle');
+            $bundle = escapeshellcmd($bundle_unsafe);
+
+            $error_code = 0;
+            $output = array();
+            exec("$bundle check", $output, $error_code);
+            $this->log(implode("\n", $output));
+
+            if ($error_code == 1) {
+                $error_code = 0;
+                $output = array();
+                exec("$bundle install", $output, $error_code);
+                $this->log(implode("\n", $output));
+
+                if ($error_code != 0) {
+                    throw new BuildException('Run "bundle install" failed.');
+                }
+            }
+            elseif ($error_code != 0) {
+                throw new BuildException('Run "bundle check" failed.');
+            }
+
+            $this->commandPattern = '%s exec ';
+            $this->commandArgs = array($bundle);
+        }
+
+        $executable = $this->executable ?: $this->executableGet('compass');
+        $this->commandPattern .= '%s';
+        $this->commandArgs[] = escapeshellcmd($executable);
 
         if ($this->command) {
             $this->commandPattern .= ' ' . $this->command;
@@ -256,33 +301,6 @@ abstract class CompassBaseTask extends Task {
      * @throws BuildException
      */
     protected function execute() {
-        if ($this->dir && !chdir($this->dir)) {
-            throw new BuildException('Working directory is not exists.');
-        }
-
-        if (file_exists('Gemfile')) {
-            $error_code = 0;
-            $output = array();
-            exec('bundle check', $output, $error_code);
-            $this->log(implode("\n", $output));
-
-            if ($error_code == 1) {
-                $error_code = 0;
-                $output = array();
-                exec('bundle install', $output, $error_code);
-                $this->log(implode("\n", $output));
-
-                if ($error_code != 0) {
-                    throw new BuildException('Run "bundle install" failed.');
-                }
-            }
-            elseif ($error_code != 0) {
-                throw new BuildException('Run "bundle check" failed.');
-            }
-
-            $this->commandPattern = 'bundle exec ' . $this->commandPattern;
-        }
-
         $command = vsprintf($this->commandPattern, $this->commandArgs);
         $this->log($command);
         exec($command, $this->commandOutput, $this->commandExitCode);
@@ -324,6 +342,29 @@ abstract class CompassBaseTask extends Task {
         }
 
         return $this;
+    }
+
+    /**
+     * @param string $command
+     *
+     * @return string
+     *
+     * @throws BuildException
+     */
+    protected function executableGet($command) {
+        $executable = $this->getProject()->getProperty("compass.$command.executable");
+        if ($executable) {
+            return $executable;
+        }
+
+        $output = array();
+        $error_code = 0;
+        exec(sprintf('which %s', escapeshellarg($command)), $output, $error_code);
+        if ($error_code == 0) {
+            return trim($output[0]);
+        }
+
+        throw new BuildException("Command not found: $command");
     }
 
 }
