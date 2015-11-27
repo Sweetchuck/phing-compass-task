@@ -38,6 +38,11 @@ abstract class CompassBaseTask extends Task {
     protected $dir = NULL;
 
     /**
+     * @var bool
+     */
+    protected $bundleExec = NULL;
+
+    /**
      * @var string
      */
     protected $executable = 'compass';
@@ -111,6 +116,20 @@ abstract class CompassBaseTask extends Task {
         }
 
         return new PhingFile('.');
+    }
+
+    /**
+     * @param bool $value
+     */
+    public function setBundleExec($value) {
+        $this->bundleExec = ((is_null($value) || is_bool($value)) ? $value : (strtolower($value) === 'true'));
+    }
+
+    /**
+     * @return bool
+     */
+    public function getBundleExec() {
+      return $this->bundleExec;
     }
 
     /**
@@ -220,7 +239,7 @@ abstract class CompassBaseTask extends Task {
         $this->commandArgs = array();
 
         $dir = $this->getDir();
-        if (file_exists("$dir/Gemfile")) {
+        if (file_exists("$dir/Gemfile") || $this->getBundleExec()) {
             chdir($dir);
 
             $bundle_unsafe = $this->executableGet('bundle');
